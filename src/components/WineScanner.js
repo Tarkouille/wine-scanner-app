@@ -73,7 +73,7 @@ const WineScanner = () => {
 
   return (
     <div className="p-4 max-w-md mx-auto">
-      <h1 className="text-xl font-bold mb-4">Scanner un vin</h1>
+      <h1 className="text-xl font-bold mb-4">Bienvenue chez les amateurs de vin 🍷</h1>
       <div ref={scannerRef} className="w-full h-48 bg-gray-200" />
       <p className="text-center text-gray-500">Dirigez l’appareil photo vers le code-barres</p>
       <input
