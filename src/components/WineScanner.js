@@ -1,14 +1,12 @@
 import React, { useState, useEffect, useRef } from "react";
 import Quagga from "quagga";
+import Tesseract from "tesseract.js";
 
 const WineScanner = () => {
   const [barcode, setBarcode] = useState("");
   const [wineData, setWineData] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState(null);
-  const [rating, setRating] = useState(0);
-  const [review, setReview] = useState("");
-  const [reviews, setReviews] = useState({});
+  const [image, setImage] = useState(null);
+  const [textResult, setTextResult] = useState("");
   const scannerRef = useRef(null);
 
   useEffect(() => {
@@ -17,15 +15,32 @@ const WineScanner = () => {
         {
           inputStream: {
             type: "LiveStream",
+            constraints: {
+              facingMode: "environment",
+              width: { min: 640, ideal: 1280, max: 1920 },
+              height: { min: 480, ideal: 720, max: 1080 },
+            },
             target: scannerRef.current,
           },
-          decoder: {
-            readers: ["ean_13_reader"],
+          locator: {
+            patchSize: "medium",
+            halfSample: true,
           },
+          decoder: {
+            readers: [
+              "ean_reader",
+              "ean_8_reader",
+              "upc_reader",
+              "upc_e_reader",
+              "code_128_reader",
+            ],
+          },
+          locate: true,
+          numOfWorkers: navigator.hardwareConcurrency || 4,
         },
         (err) => {
           if (err) {
-            console.error("Erreur lors de l'initialisation du scanner", err);
+            console.error("Erreur Quagga:", err);
             return;
           }
           Quagga.start();
@@ -37,100 +52,63 @@ const WineScanner = () => {
         Quagga.stop();
       });
     }
+
+    return () => {
+      Quagga.stop();
+    };
   }, []);
 
-  const fetchWineInfo = async () => {
-    if (!barcode) return;
-    setLoading(true);
-    setError(null);
-    setWineData(null);
-    
-    try {
-      const response = await fetch(`https://world.openfoodfacts.org/api/v0/product/${barcode}.json`);
-      const data = await response.json();
-      
-      if (data.status === 1) {
-        setWineData(data.product);
-      } else {
-        setError("Vin non trouvé.");
-      }
-    } catch (err) {
-      setError("Erreur lors de la récupération des données.");
+  const handleImageUpload = (event) => {
+    const file = event.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        setImage(reader.result);
+        processImage(reader.result);
+      };
+      reader.readAsDataURL(file);
     }
-    
-    setLoading(false);
   };
 
-  const saveReview = () => {
-    if (!wineData) return;
-    setReviews((prev) => ({
-      ...prev,
-      [barcode]: { rating, review },
-    }));
-    setReview("");
-    setRating(0);
+  const processImage = async (imageData) => {
+    setTextResult("Analyse en cours...");
+    const { data: { text } } = await Tesseract.recognize(imageData, "eng");
+    setTextResult(text);
   };
 
   return (
-    <div className="p-4 max-w-md mx-auto">
-      <h1 className="text-xl font-bold mb-4">Bienvenue chez les amateurs de vin 🍷</h1>
-      <div ref={scannerRef} className="w-full h-48 bg-gray-200" />
-      <p className="text-center text-gray-500">Dirigez l’appareil photo vers le code-barres</p>
-      <input
-        type="text"
-        placeholder="Ou entrez un code-barres"
-        value={barcode}
-        onChange={(e) => setBarcode(e.target.value)}
-        className="border p-2 w-full mt-2"
-      />
-      <button
-        onClick={fetchWineInfo}
-        className="bg-blue-500 text-white p-2 mt-2 w-full"
-      >
-        Rechercher
-      </button>
+    <div className="p-4 max-w-md mx-auto text-center bg-gray-100 min-h-screen flex flex-col items-center justify-center">
+      <h1 className="text-2xl font-bold mb-4 text-gray-800">🍷 Bienvenue chez les amateurs de vin</h1>
+      <p className="text-gray-600 mb-2">Scannez un code-barres ou prenez une photo d'une étiquette.</p>
+      
+      <div className="relative w-full max-w-xs h-40 border-2 border-gray-400 rounded-lg overflow-hidden mb-4">
+        <div ref={scannerRef} className="absolute inset-0 w-full h-full bg-black opacity-70"></div>
+        <p className="absolute bottom-2 left-1/2 transform -translate-x-1/2 text-white text-sm">Dirigez l’appareil photo vers le code-barres</p>
+      </div>
 
-      {loading && <p>Chargement...</p>}
-      {error && <p className="text-red-500">{error}</p>}
-      {wineData && (
-        <div className="mt-4 p-4 border">
-          <h2 className="text-lg font-bold">{wineData.product_name || "Nom inconnu"}</h2>
-          <p><strong>Marque:</strong> {wineData.brands || "Non spécifié"}</p>
-          {wineData.image_url && <img src={wineData.image_url} alt="Étiquette" className="mt-2 w-32" />}
-          
-          {/* Avis & Note */}
-          <div className="mt-4">
-            <label className="block font-bold">Note :</label>
-            <select value={rating} onChange={(e) => setRating(Number(e.target.value))} className="border p-2 w-full">
-              <option value={0}>Sélectionnez une note</option>
-              <option value={1}>⭐</option>
-              <option value={2}>⭐⭐</option>
-              <option value={3}>⭐⭐⭐</option>
-              <option value={4}>⭐⭐⭐⭐</option>
-              <option value={5}>⭐⭐⭐⭐⭐</option>
-            </select>
-            <label className="block font-bold mt-2">Avis :</label>
-            <textarea
-              value={review}
-              onChange={(e) => setReview(e.target.value)}
-              className="border p-2 w-full"
-              placeholder="Donnez votre avis sur ce vin..."
-            />
-            <button onClick={saveReview} className="bg-green-500 text-white p-2 mt-2 w-full">
-              Enregistrer l'avis
-            </button>
-          </div>
-          
-          {/* Affichage des avis */}
-          {reviews[barcode] && (
-            <div className="mt-4 p-4 border-t">
-              <h3 className="font-bold">Votre avis :</h3>
-              <p>Note : {"⭐".repeat(reviews[barcode].rating)}</p>
-              <p>{reviews[barcode].review}</p>
-            </div>
-          )}
+      {barcode && <p className="mt-4 text-green-500 font-bold text-lg">✅ Code détecté : {barcode}</p>}
+
+      <input
+        type="file"
+        accept="image/*"
+        onChange={handleImageUpload}
+        className="mt-4 border p-2 w-full cursor-pointer"
+      />
+
+      {image && (
+        <div className="mt-4">
+          <img src={image} alt="Étiquette uploadée" className="w-32 mx-auto border rounded-lg" />
+          <p className="text-gray-600 mt-2">🔍 Texte détecté :</p>
+          <p className="text-gray-800 font-bold">{textResult}</p>
         </div>
       )}
+
+      <button
+        onClick={() => window.location.reload()}
+        className="mt-4 bg-blue-500 text-white px-4 py-2 rounded-lg shadow-md hover:bg-blue-600 transition"
+      >
+        Scanner un autre vin
+      </button>
     </div>
   );
 };
